@@ -1,6 +1,6 @@
 [package]
 name = "solana-dekey"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "solana-dekey is a utility program that replaces Solana validator identity pubkeys and vote account pubkeys with the validator's name."
 license = "CC-PDDC"

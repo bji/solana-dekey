@@ -180,7 +180,8 @@ fn create_cache(
             serde_json::json!({
                 "jsonrpc" : "2.0",
                 "id" : 1,
-                "method" : "getVoteAccounts"
+                "method" : "getVoteAccounts",
+                "params" : [ { "delinquentSlotDistance" : u64::MAX } ]
             })
         ))
         .unwrap_or_else(|e| error_exit(format!("ERROR: Failed to load vote accounts from {}: {}", rpc_url, e)));
@@ -339,23 +340,37 @@ fn main()
     // If looking up names, just do a name lookup, don't do dekeying
     match lookup_re {
         Some(lookup_re) => {
-            // Invert the vote to validator id map
+            // Invert the vote to validator id map, meanwhile checking to see if the regexp matches a vote
+            // account or validator id
+            // found is Option<(Option<vote_account>, Option<validator_id>)>
+            let mut found_validator_ids = std::collections::HashSet::<String>::new();
             let mut validator_id_to_vote = std::collections::HashMap::<String, String>::new();
             for (key, value) in vote_to_validator_id {
+                if lookup_re.is_match(&key) || lookup_re.is_match(&value) {
+                    found_validator_ids.insert(value.clone());
+                }
                 validator_id_to_vote.insert(value, key);
             }
-            // Check every name in the validator_id_to_name map
-            for (key, value) in validator_id_to_name {
-                if lookup_re.is_match(&value) {
-                    println!(
-                        "{}",
-                        if ascii_only { value } else { display_name(&value, ascii_only, fit_key_length, &key) }
-                    );
-                    println!("    Validator Identity: {}", key);
-                    match validator_id_to_vote.get(&key) {
-                        Some(v) => println!("          Vote Account: {}", v),
-                        None => ()
-                    }
+            // Check every name and validator id in the validator_id_to_name map
+            for (key, value) in &validator_id_to_name {
+                if lookup_re.is_match(&key) || lookup_re.is_match(&value) {
+                    found_validator_ids.insert(key.clone());
+                }
+            }
+            for validator in found_validator_ids {
+                let vote_account = validator_id_to_vote.get(&validator);
+                let name = match validator_id_to_name.get(&validator) {
+                    Some(name) => name.clone(),
+                    None => vote_account.unwrap_or(&validator).clone()
+                };
+                println!(
+                    "{}",
+                    if ascii_only { name.clone() } else { display_name(&name, ascii_only, fit_key_length, &validator) }
+                );
+                println!("    Validator Identity: {}", validator);
+                match vote_account {
+                    Some(v) => println!("          Vote Account: {}", v),
+                    None => ()
                 }
             }
             return;
