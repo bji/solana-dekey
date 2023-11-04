@@ -16,6 +16,18 @@ struct VoteAccountDetails
     nodePubkey : String
 }
 
+enum Fit
+{
+    Key,
+    Max
+}
+
+enum Duplicate
+{
+    Prefix,
+    Suffix
+}
+
 fn error_exit(msg : String) -> !
 {
     eprintln!("{}", msg);
@@ -139,29 +151,36 @@ fn has_printable(s : &str) -> bool
 fn display_name(
     name : &str,
     ascii_only : bool,
-    match_key_len : bool,
+    fit : &Option<Fit>,
+    duplicate : &Option<Duplicate>,
     key : &str
 ) -> String
 {
     let mut name =
         if ascii_only { name.chars().filter(|c| c.is_ascii()).collect::<String>() } else { name.to_string() };
 
-    if match_key_len {
-        if name.len() > key.len() {
-            name = name.chars().take(key.len()).collect()
-        }
-        else if key.len() > name.len() {
-            for _ in 0..(key.len() - name.len()) {
-                name.push_str(" ")
-            }
-        }
+    match fit {
+        Some(Fit::Key) => {
+            let mut v = name.chars().collect::<Vec<char>>();
+            v.resize(key.len(), ' ');
+            name = v.iter().collect::<String>()
+        },
+        Some(Fit::Max) => {
+            let mut v = name.chars().collect::<Vec<char>>();
+            v.resize(44, ' ');
+            name = v.iter().collect::<String>()
+        },
+        None => ()
     }
 
     if name.len() == 0 || !has_printable(&name) {
-        key.to_string()
+        name = key.to_string()
     }
-    else {
-        name
+
+    match duplicate {
+        Some(Duplicate::Prefix) => format!("{} ({})", name, key),
+        Some(Duplicate::Suffix) => format!("{} ({})", key, name),
+        None => name
     }
 }
 
@@ -256,7 +275,8 @@ fn main()
     let mut rpc_url = DEFAULT_MAINNET_RPC_URL.to_string();
     let mut cache_file = None;
     let mut ascii_only = false;
-    let mut fit_key_length = false;
+    let mut fit = None;
+    let mut duplicate = None;
     let mut dekey_identity = true;
     let mut dekey_vote = true;
     let mut delete_cache = false;
@@ -288,7 +308,10 @@ fn main()
                 Some(a) => cache_file = Some(a.to_string())
             },
             "-a" | "--ascii" => ascii_only = true,
-            "-f" | "--fit" => fit_key_length = true,
+            "-f" | "--fit" => fit = Some(Fit::Key),
+            "-m" | "--max" => fit = Some(Fit::Max),
+            "-p" | "--prefix" => duplicate = Some(Duplicate::Prefix),
+            "-s" | "--suffix" => duplicate = Some(Duplicate::Suffix),
             "-i" | "--identity" => dekey_vote = false,
             "-v" | "--vote" => dekey_identity = false,
             "-d" | "--delete_cache" => delete_cache = true,
@@ -363,10 +386,7 @@ fn main()
                     Some(name) => name.clone(),
                     None => vote_account.unwrap_or(&validator).clone()
                 };
-                println!(
-                    "{}",
-                    if ascii_only { name.clone() } else { display_name(&name, ascii_only, fit_key_length, &validator) }
-                );
+                println!("{}", display_name(&name, ascii_only, &fit, &duplicate, &validator));
                 println!("    Validator Identity: {}", validator);
                 match vote_account {
                     Some(v) => println!("          Vote Account: {}", v),
@@ -378,33 +398,26 @@ fn main()
         None => ()
     }
 
-    // If ascii-only or fit_key_length, replace the validator_id_to_name with a map that is to ascii values
-    let validator_id_to_name = if ascii_only || fit_key_length {
-        validator_id_to_name
-            .into_iter()
-            .map(|(key, value)| (key.clone(), display_name(&value, ascii_only, fit_key_length, &key)))
-            .collect()
-    }
-    else {
-        validator_id_to_name
-    };
-
     // Now build up the regexps which will be used to replace in each line
     let mut regexps = vec![];
 
     if dekey_vote {
         for (vote_pubkey, validator_id) in vote_to_validator_id {
-            let name = match validator_id_to_name.get(&validator_id) {
-                Some(name) => name.clone(),
-                None => validator_id.clone()
-            };
-            regexps.push((regex::Regex::new(&vote_pubkey).unwrap(), name));
+            if let Some(name) = validator_id_to_name.get(&validator_id) {
+                regexps.push((
+                    regex::Regex::new(&vote_pubkey).unwrap(),
+                    display_name(&name, ascii_only, &fit, &duplicate, &vote_pubkey)
+                ));
+            }
         }
     }
 
     if dekey_identity {
         for (validator_id, name) in validator_id_to_name {
-            regexps.push((regex::Regex::new(&validator_id).unwrap(), name));
+            regexps.push((
+                regex::Regex::new(&validator_id).unwrap(),
+                display_name(&name, ascii_only, &fit, &duplicate, &validator_id)
+            ));
         }
     }
 
