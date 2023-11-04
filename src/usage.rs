@@ -45,4 +45,13 @@ Arguments:
                   is useful when the input being processed is in tabular
                   form, because it retains the spacing of the table
                   columns.
+
+  -m (--max) -- Pad (with spaces) the validator names so that they have
+                  the same length as a maximum key length of 44.
+
+  -p (--prefix) -- Rather than replacing matched keys with names, instead
+                   prefix the key with the name, in parenthesis.
+
+  -s (--suffix) -- Rather than replacing matched keys with names, instead
+                   suffix the key with the name, in parenthesis.
 ";
